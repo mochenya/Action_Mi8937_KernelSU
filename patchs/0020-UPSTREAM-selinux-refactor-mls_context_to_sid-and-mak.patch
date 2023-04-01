@@ -1,0 +1,352 @@
+From f64f930fc8edfb61ea7c87abb25c6f208d19269d Mon Sep 17 00:00:00 2001
+From: Jann Horn <jannh@google.com>
+Date: Mon, 6 Aug 2018 23:19:32 +0200
+Subject: [PATCH 20/26] UPSTREAM: selinux: refactor mls_context_to_sid() and
+ make it stricter
+
+The intended behavior change for this patch is to reject any MLS strings
+that contain (trailing) garbage if p->mls_enabled is true.
+
+As suggested by Paul Moore, change mls_context_to_sid() so that the two
+parts of the range are extracted before the rest of the parsing. Because
+now we don't have to scan for two different separators simultaneously
+everywhere, we can actually switch to strchr() everywhere instead of the
+open-coded loops that scan for two separators at once.
+
+mls_context_to_sid() used to signal how much of the input string was parsed
+by updating `*scontext`. However, there is actually no case in which
+mls_context_to_sid() only parses a subset of the input and still returns
+a success (other than the buggy case with a second '-' in which it
+incorrectly claims to have consumed the entire string). Turn `scontext`
+into a simple pointer argument and stop redundantly checking whether the
+entire input was consumed in string_to_context_struct(). This also lets us
+remove the `scontext_len` argument from `string_to_context_struct()`.
+
+Signed-off-by: Jann Horn <jannh@google.com>
+[PM: minor merge fuzz in convert_context()]
+Signed-off-by: Paul Moore <paul@paul-moore.com>
+
+(cherry picked from commit 95ffe194204ae3cef88d0b59be209204bbe9b3be)
+Change-Id: I48f72875149bb63c56f99c100705d103646ae829
+Bug: 140252993
+Signed-off-by: Jeff Vander Stoep <jeffv@google.com>
+---
+ security/selinux/ss/mls.c      | 178 ++++++++++++++-------------------
+ security/selinux/ss/mls.h      |   2 +-
+ security/selinux/ss/services.c |  12 +--
+ 3 files changed, 82 insertions(+), 110 deletions(-)
+
+diff --git a/security/selinux/ss/mls.c b/security/selinux/ss/mls.c
+index de732fedfcb0..b7d607a0d7f5 100644
+--- a/security/selinux/ss/mls.c
++++ b/security/selinux/ss/mls.c
+@@ -217,9 +217,7 @@ int mls_context_isvalid(struct policydb *p, struct context *c)
+ /*
+  * Set the MLS fields in the security context structure
+  * `context' based on the string representation in
+- * the string `*scontext'.  Update `*scontext' to
+- * point to the end of the string representation of
+- * the MLS fields.
++ * the string `scontext'.
+  *
+  * This function modifies the string in place, inserting
+  * NULL characters to terminate the MLS fields.
+@@ -234,22 +232,21 @@ int mls_context_isvalid(struct policydb *p, struct context *c)
+  */
+ int mls_context_to_sid(struct policydb *pol,
+ 		       char oldc,
+-		       char **scontext,
++		       char *scontext,
+ 		       struct context *context,
+ 		       struct sidtab *s,
+ 		       u32 def_sid)
+ {
+-
+-	char delim;
+-	char *scontextp, *p, *rngptr;
++	char *sensitivity, *cur_cat, *next_cat, *rngptr;
+ 	struct level_datum *levdatum;
+ 	struct cat_datum *catdatum, *rngdatum;
+-	int l, rc = -EINVAL;
++	int l, rc, i;
++	char *rangep[2];
+ 
+ 	if (!pol->mls_enabled) {
+-		if (def_sid != SECSID_NULL && oldc)
+-			*scontext += strlen(*scontext) + 1;
+-		return 0;
++		if ((def_sid != SECSID_NULL && oldc) || (*scontext) == '\0')
++			return 0;
++		return -EINVAL;
+ 	}
+ 
+ 	/*
+@@ -260,113 +257,94 @@ int mls_context_to_sid(struct policydb *pol,
+ 		struct context *defcon;
+ 
+ 		if (def_sid == SECSID_NULL)
+-			goto out;
++			return -EINVAL;
+ 
+ 		defcon = sidtab_search(s, def_sid);
+ 		if (!defcon)
+-			goto out;
++			return -EINVAL;
+ 
+-		rc = mls_context_cpy(context, defcon);
+-		goto out;
++		return mls_context_cpy(context, defcon);
+ 	}
+ 
+-	/* Extract low sensitivity. */
+-	scontextp = p = *scontext;
+-	while (*p && *p != ':' && *p != '-')
+-		p++;
+-
+-	delim = *p;
+-	if (delim != '\0')
+-		*p++ = '\0';
++	/*
++	 * If we're dealing with a range, figure out where the two parts
++	 * of the range begin.
++	 */
++	rangep[0] = scontext;
++	rangep[1] = strchr(scontext, '-');
++	if (rangep[1]) {
++		rangep[1][0] = '\0';
++		rangep[1]++;
++	}
+ 
++	/* For each part of the range: */
+ 	for (l = 0; l < 2; l++) {
+-		levdatum = hashtab_search(pol->p_levels.table, scontextp);
+-		if (!levdatum) {
+-			rc = -EINVAL;
+-			goto out;
+-		}
++		/* Split sensitivity and category set. */
++		sensitivity = rangep[l];
++		if (sensitivity == NULL)
++			break;
++		next_cat = strchr(sensitivity, ':');
++		if (next_cat)
++			*(next_cat++) = '\0';
+ 
++		/* Parse sensitivity. */
++		levdatum = hashtab_search(pol->p_levels.table, sensitivity);
++		if (!levdatum)
++			return -EINVAL;
+ 		context->range.level[l].sens = levdatum->level->sens;
+ 
+-		if (delim == ':') {
+-			/* Extract category set. */
+-			while (1) {
+-				scontextp = p;
+-				while (*p && *p != ',' && *p != '-')
+-					p++;
+-				delim = *p;
+-				if (delim != '\0')
+-					*p++ = '\0';
+-
+-				/* Separate into range if exists */
+-				rngptr = strchr(scontextp, '.');
+-				if (rngptr != NULL) {
+-					/* Remove '.' */
+-					*rngptr++ = '\0';
+-				}
++		/* Extract category set. */
++		while (next_cat != NULL) {
++			cur_cat = next_cat;
++			next_cat = strchr(next_cat, ',');
++			if (next_cat != NULL)
++				*(next_cat++) = '\0';
++
++			/* Separate into range if exists */
++			rngptr = strchr(cur_cat, '.');
++			if (rngptr != NULL) {
++				/* Remove '.' */
++				*rngptr++ = '\0';
++			}
+ 
+-				catdatum = hashtab_search(pol->p_cats.table,
+-							  scontextp);
+-				if (!catdatum) {
+-					rc = -EINVAL;
+-					goto out;
+-				}
++			catdatum = hashtab_search(pol->p_cats.table, cur_cat);
++			if (!catdatum)
++				return -EINVAL;
+ 
+-				rc = ebitmap_set_bit(&context->range.level[l].cat,
+-						     catdatum->value - 1, 1);
+-				if (rc)
+-					goto out;
+-
+-				/* If range, set all categories in range */
+-				if (rngptr) {
+-					int i;
+-
+-					rngdatum = hashtab_search(pol->p_cats.table, rngptr);
+-					if (!rngdatum) {
+-						rc = -EINVAL;
+-						goto out;
+-					}
+-
+-					if (catdatum->value >= rngdatum->value) {
+-						rc = -EINVAL;
+-						goto out;
+-					}
+-
+-					for (i = catdatum->value; i < rngdatum->value; i++) {
+-						rc = ebitmap_set_bit(&context->range.level[l].cat, i, 1);
+-						if (rc)
+-							goto out;
+-					}
+-				}
++			rc = ebitmap_set_bit(&context->range.level[l].cat,
++					     catdatum->value - 1, 1);
++			if (rc)
++				return rc;
++
++			/* If range, set all categories in range */
++			if (rngptr == NULL)
++				continue;
++
++			rngdatum = hashtab_search(pol->p_cats.table, rngptr);
++			if (!rngdatum)
++				return -EINVAL;
++
++			if (catdatum->value >= rngdatum->value)
++				return -EINVAL;
+ 
+-				if (delim != ',')
+-					break;
++			for (i = catdatum->value; i < rngdatum->value; i++) {
++				rc = ebitmap_set_bit(&context->range.level[l].cat, i, 1);
++				if (rc)
++					return rc;
+ 			}
+ 		}
+-		if (delim == '-') {
+-			/* Extract high sensitivity. */
+-			scontextp = p;
+-			while (*p && *p != ':')
+-				p++;
+-
+-			delim = *p;
+-			if (delim != '\0')
+-				*p++ = '\0';
+-		} else
+-			break;
+ 	}
+ 
+-	if (l == 0) {
++	/* If we didn't see a '-', the range start is also the range end. */
++	if (rangep[1] == NULL) {
+ 		context->range.level[1].sens = context->range.level[0].sens;
+ 		rc = ebitmap_cpy(&context->range.level[1].cat,
+ 				 &context->range.level[0].cat);
+ 		if (rc)
+-			goto out;
++			return rc;
+ 	}
+-	*scontext = ++p;
+-	rc = 0;
+-out:
+-	return rc;
++
++	return 0;
+ }
+ 
+ /*
+@@ -378,21 +356,19 @@ int mls_context_to_sid(struct policydb *pol,
+ int mls_from_string(struct policydb *p, char *str, struct context *context,
+ 		    gfp_t gfp_mask)
+ {
+-	char *tmpstr, *freestr;
++	char *tmpstr;
+ 	int rc;
+ 
+ 	if (!p->mls_enabled)
+ 		return -EINVAL;
+ 
+-	/* we need freestr because mls_context_to_sid will change
+-	   the value of tmpstr */
+-	tmpstr = freestr = kstrdup(str, gfp_mask);
++	tmpstr = kstrdup(str, gfp_mask);
+ 	if (!tmpstr) {
+ 		rc = -ENOMEM;
+ 	} else {
+-		rc = mls_context_to_sid(p, ':', &tmpstr, context,
++		rc = mls_context_to_sid(p, ':', tmpstr, context,
+ 					NULL, SECSID_NULL);
+-		kfree(freestr);
++		kfree(tmpstr);
+ 	}
+ 
+ 	return rc;
+diff --git a/security/selinux/ss/mls.h b/security/selinux/ss/mls.h
+index bbb24d037594..288ca72e8637 100644
+--- a/security/selinux/ss/mls.h
++++ b/security/selinux/ss/mls.h
+@@ -33,7 +33,7 @@ int mls_level_isvalid(struct policydb *p, struct mls_level *l);
+ 
+ int mls_context_to_sid(struct policydb *p,
+ 		       char oldc,
+-		       char **scontext,
++		       char *scontext,
+ 		       struct context *context,
+ 		       struct sidtab *s,
+ 		       u32 def_sid);
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index 589a54585cb5..a35c6e962a2f 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -1367,7 +1367,6 @@ int security_sid_to_context_force(struct selinux_state *state, u32 sid,
+ static int string_to_context_struct(struct policydb *pol,
+ 				    struct sidtab *sidtabp,
+ 				    char *scontext,
+-				    u32 scontext_len,
+ 				    struct context *ctx,
+ 				    u32 def_sid)
+ {
+@@ -1428,15 +1427,12 @@ static int string_to_context_struct(struct policydb *pol,
+ 
+ 	ctx->type = typdatum->value;
+ 
+-	rc = mls_context_to_sid(pol, oldc, &p, ctx, sidtabp, def_sid);
++	rc = mls_context_to_sid(pol, oldc, p, ctx, sidtabp, def_sid);
+ 	if (rc)
+ 		goto out;
+ 
+-	rc = -EINVAL;
+-	if ((p - scontext) < scontext_len)
+-		goto out;
+-
+ 	/* Check the validity of the new context. */
++	rc = -EINVAL;
+ 	if (!policydb_context_isvalid(pol, ctx))
+ 		goto out;
+ 	rc = 0;
+@@ -1491,7 +1487,7 @@ static int security_context_to_sid_core(struct selinux_state *state,
+ 	policydb = &state->ss->policydb;
+ 	sidtab = state->ss->sidtab;
+ 	rc = string_to_context_struct(policydb, sidtab, scontext2,
+-				      scontext_len, &context, def_sid);
++				      &context, def_sid);
+ 	if (rc == -EINVAL && force) {
+ 		context.str = str;
+ 		context.len = strlen(str) + 1;
+@@ -1944,7 +1940,7 @@ static int convert_context(u32 key,
+ 			goto out;
+ 
+ 		rc = string_to_context_struct(args->newp, NULL, s,
+-					      c->len, &ctx, SECSID_NULL);
++					      &ctx, SECSID_NULL);
+ 		kfree(s);
+ 		if (!rc) {
+ 			pr_info("SELinux:  Context %s became valid (mapped).\n",
+-- 
+2.40.0
+

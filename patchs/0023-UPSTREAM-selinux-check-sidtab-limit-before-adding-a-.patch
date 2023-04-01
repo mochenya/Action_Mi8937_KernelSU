@@ -1,0 +1,43 @@
+From 8a4e1bc26af61b35e6c344952ec3058df6591004 Mon Sep 17 00:00:00 2001
+From: Ondrej Mosnacek <omosnace@redhat.com>
+Date: Tue, 23 Jul 2019 08:50:59 +0200
+Subject: [PATCH 23/26] UPSTREAM: selinux: check sidtab limit before adding a
+ new entry
+
+We need to error out when trying to add an entry above SIDTAB_MAX in
+sidtab_reverse_lookup() to avoid overflow on the odd chance that this
+happens.
+
+Cc: stable@vger.kernel.org
+Fixes: ee1a84fdfeed ("selinux: overhaul sidtab to fix bug and improve performance")
+Signed-off-by: Ondrej Mosnacek <omosnace@redhat.com>
+Reviewed-by: Kees Cook <keescook@chromium.org>
+Signed-off-by: Paul Moore <paul@paul-moore.com>
+
+Change-Id: I17468cf0db77ba30dd333c73f742ab17072d4ef0
+(cherry picked from commit acbc372e6109c803cbee4733769d02008381740f)
+Bug: 140252993
+Signed-off-by: Jeff Vander Stoep <jeffv@google.com>
+---
+ security/selinux/ss/sidtab.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/security/selinux/ss/sidtab.c b/security/selinux/ss/sidtab.c
+index 43f03d5a18c4..e4bfb6ba5244 100644
+--- a/security/selinux/ss/sidtab.c
++++ b/security/selinux/ss/sidtab.c
+@@ -285,6 +285,11 @@ static int sidtab_reverse_lookup(struct sidtab *s, struct context *context,
+ 		++count;
+ 	}
+ 
++	/* bail out if we already reached max entries */
++	rc = -EOVERFLOW;
++	if (count >= SIDTAB_MAX)
++		goto out_unlock;
++
+ 	/* insert context into new entry */
+ 	rc = -ENOMEM;
+ 	dst = sidtab_do_lookup(s, count, 1);
+-- 
+2.40.0
+

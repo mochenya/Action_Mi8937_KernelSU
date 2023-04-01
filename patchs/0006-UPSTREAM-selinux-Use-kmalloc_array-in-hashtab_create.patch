@@ -1,0 +1,39 @@
+From 4becc039782e4a2f4094ad5949cfbc0fbe7abfe6 Mon Sep 17 00:00:00 2001
+From: Markus Elfring <elfring@users.sourceforge.net>
+Date: Sat, 14 Jan 2017 12:06:13 +0100
+Subject: [PATCH 06/26] UPSTREAM: selinux: Use kmalloc_array() in
+ hashtab_create()
+
+A multiplication for the size determination of a memory allocation
+indicated that an array data structure should be processed.
+Thus use the corresponding function "kmalloc_array".
+
+This issue was detected by using the Coccinelle software.
+
+Signed-off-by: Markus Elfring <elfring@users.sourceforge.net>
+Signed-off-by: Paul Moore <paul@paul-moore.com>
+
+(cherry picked from commit 2f00e680fe25d8d2758879b772d54cb46a78b59d)
+Change-Id: I8bbc5d3698e4eee8c4af4a050c32ce5a2dde7cee
+Bug: 140252993
+Signed-off-by: Jeff Vander Stoep <jeffv@google.com>
+---
+ security/selinux/ss/hashtab.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/security/selinux/ss/hashtab.c b/security/selinux/ss/hashtab.c
+index 2cc496149842..dc99fff64ecb 100644
+--- a/security/selinux/ss/hashtab.c
++++ b/security/selinux/ss/hashtab.c
+@@ -24,7 +24,7 @@ struct hashtab *hashtab_create(u32 (*hash_value)(struct hashtab *h, const void *
+ 	p->nel = 0;
+ 	p->hash_value = hash_value;
+ 	p->keycmp = keycmp;
+-	p->htable = kmalloc(sizeof(*(p->htable)) * size, GFP_KERNEL);
++	p->htable = kmalloc_array(size, sizeof(*p->htable), GFP_KERNEL);
+ 	if (p->htable == NULL) {
+ 		kfree(p);
+ 		return NULL;
+-- 
+2.40.0
+

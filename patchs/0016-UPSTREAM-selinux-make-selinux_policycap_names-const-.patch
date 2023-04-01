@@ -1,0 +1,49 @@
+From 12792c993047db615a85c59d35adc59d93e44373 Mon Sep 17 00:00:00 2001
+From: Alexey Dobriyan <adobriyan@gmail.com>
+Date: Sat, 24 Nov 2018 12:11:32 +0300
+Subject: [PATCH 16/26] UPSTREAM: selinux: make "selinux_policycap_names[]"
+ const char *
+
+Those strings aren't written.
+
+Signed-off-by: Alexey Dobriyan <adobriyan@gmail.com>
+Signed-off-by: Paul Moore <paul@paul-moore.com>
+
+(cherry picked from commit 89f5bebcf0401dac470756869587a50dd72ff7b5)
+Change-Id: If99d0710869c6e1cc13296c6c4536f24d7d659c8
+Bug: 140252993
+Signed-off-by: Jeff Vander Stoep <jeffv@google.com>
+---
+ security/selinux/include/security.h | 2 +-
+ security/selinux/ss/services.c      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/security/selinux/include/security.h b/security/selinux/include/security.h
+index 0c02e4ae853b..4f59675a4961 100644
+--- a/security/selinux/include/security.h
++++ b/security/selinux/include/security.h
+@@ -76,7 +76,7 @@ enum {
+ };
+ #define POLICYDB_CAPABILITY_MAX (__POLICYDB_CAPABILITY_MAX - 1)
+ 
+-extern char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX];
++extern const char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX];
+ 
+ extern int selinux_android_netlink_route;
+ extern int selinux_android_netlink_getneigh;
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index 65e09035eceb..e3611bb3a1ff 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -71,7 +71,7 @@
+ #include "audit.h"
+ 
+ /* Policy capability names */
+-char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX] = {
++const char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX] = {
+ 	"network_peer_controls",
+ 	"open_perms",
+ 	"compat1",
+-- 
+2.40.0
+

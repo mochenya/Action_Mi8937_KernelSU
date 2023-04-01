@@ -1,0 +1,148 @@
+From 01f413837b20f531c1d0390572340c53a6ff8dc9 Mon Sep 17 00:00:00 2001
+From: Stephen Smalley <sds@tycho.nsa.gov>
+Date: Thu, 18 May 2017 16:58:31 -0400
+Subject: [PATCH 08/26] BACKPORT: selinux: log policy capability state when a
+ policy is loaded
+
+Log the state of SELinux policy capabilities when a policy is loaded.
+For each policy capability known to the kernel, log the policy capability
+name and the value set in the policy.  For policy capabilities that are
+set in the loaded policy but unknown to the kernel, log the policy
+capability index, since this is the only information presently available
+in the policy.
+
+Sample output with a policy created with a new capability defined
+that is not known to the kernel:
+SELinux:  policy capability network_peer_controls=1
+SELinux:  policy capability open_perms=1
+SELinux:  policy capability extended_socket_class=1
+SELinux:  policy capability always_check_network=0
+SELinux:  policy capability cgroup_seclabel=0
+SELinux:  unknown policy capability 5
+
+Resolves: https://github.com/SELinuxProject/selinux-kernel/issues/32
+
+Signed-off-by: Stephen Smalley <sds@tycho.nsa.gov>
+Signed-off-by: Paul Moore <paul@paul-moore.com>
+
+(cherry picked from commit 4dc2fce342f8e5b165e2eda29a39446bb07b2457)
+Resolved conflicts with extended_socket_class and cgroup_seclabel
+policy capabilities. These are referred to as "compat1" and "compat2"
+in the change to preserve compatibility with the policy binary.
+Neither of these policy capabilities are appropriate for backporting
+as they will break Treble backwards-compat requirements.
+Change-Id: Ic1c37514b742829904e3c9536a865f29150658ce
+Bug: 140252993
+Signed-off-by: Jeff Vander Stoep <jeffv@google.com>
+---
+ security/selinux/include/security.h |  6 +++++-
+ security/selinux/selinuxfs.c        | 12 ++----------
+ security/selinux/ss/services.c      | 23 +++++++++++++++++++++++
+ 3 files changed, 30 insertions(+), 11 deletions(-)
+
+diff --git a/security/selinux/include/security.h b/security/selinux/include/security.h
+index e5bd50cf517f..9f4d58e64780 100644
+--- a/security/selinux/include/security.h
++++ b/security/selinux/include/security.h
+@@ -68,14 +68,18 @@ extern int selinux_enabled;
+ enum {
+ 	POLICYDB_CAPABILITY_NETPEER,
+ 	POLICYDB_CAPABILITY_OPENPERM,
+-	POLICYDB_CAPABILITY_REDHAT1,
++	POLICYDB_CAPABILITY_COMPAT1,
+ 	POLICYDB_CAPABILITY_ALWAYSNETWORK,
++	POLICYDB_CAPABILITY_COMPAT2,
+ 	__POLICYDB_CAPABILITY_MAX
+ };
+ #define POLICYDB_CAPABILITY_MAX (__POLICYDB_CAPABILITY_MAX - 1)
+ 
++extern char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX];
++
+ extern int selinux_android_netlink_route;
+ extern int selinux_android_netlink_getneigh;
++
+ extern int selinux_policycap_netpeer;
+ extern int selinux_policycap_openperm;
+ extern int selinux_policycap_alwaysnetwork;
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+index fd06eb6827ab..b110c0a191fb 100644
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -41,14 +41,6 @@
+ #include "objsec.h"
+ #include "conditional.h"
+ 
+-/* Policy capability filenames */
+-static char *policycap_names[] = {
+-	"network_peer_controls",
+-	"open_perms",
+-	"redhat1",
+-	"always_check_network"
+-};
+-
+ unsigned int selinux_checkreqprot = CONFIG_SECURITY_SELINUX_CHECKREQPROT_VALUE;
+ 
+ static int __init checkreqprot_setup(char *str)
+@@ -1738,9 +1730,9 @@ static int sel_make_policycap(void)
+ 	sel_remove_entries(policycap_dir);
+ 
+ 	for (iter = 0; iter <= POLICYDB_CAPABILITY_MAX; iter++) {
+-		if (iter < ARRAY_SIZE(policycap_names))
++		if (iter < ARRAY_SIZE(selinux_policycap_names))
+ 			dentry = d_alloc_name(policycap_dir,
+-					      policycap_names[iter]);
++					      selinux_policycap_names[iter]);
+ 		else
+ 			dentry = d_alloc_name(policycap_dir, "unknown");
+ 
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index 4635b8661168..1d948835dddc 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -70,6 +70,15 @@
+ #include "ebitmap.h"
+ #include "audit.h"
+ 
++/* Policy capability names */
++char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX] = {
++	"network_peer_controls",
++	"open_perms",
++	"compat1",
++	"always_check_network",
++	"compat2"
++};
++
+ int selinux_android_netlink_route;
+ int selinux_android_netlink_getneigh;
+ int selinux_policycap_netpeer;
+@@ -1987,6 +1996,9 @@ static int convert_context(u32 key,
+ 
+ static void security_load_policycaps(void)
+ {
++	unsigned int i;
++	struct ebitmap_node *node;
++
+ 	selinux_policycap_netpeer = ebitmap_get_bit(&policydb.policycaps,
+ 						  POLICYDB_CAPABILITY_NETPEER);
+ 	selinux_policycap_openperm = ebitmap_get_bit(&policydb.policycaps,
+@@ -1997,6 +2009,17 @@ static void security_load_policycaps(void)
+ 	selinux_android_netlink_route = policydb.android_netlink_route;
+ 	selinux_android_netlink_getneigh = policydb.android_netlink_getneigh;
+ 	selinux_nlmsg_init();
++
++	for (i = 0; i < ARRAY_SIZE(selinux_policycap_names); i++)
++		pr_info("SELinux:  policy capability %s=%d\n",
++			selinux_policycap_names[i],
++			ebitmap_get_bit(&policydb.policycaps, i));
++
++	ebitmap_for_each_positive_bit(&policydb.policycaps, node, i) {
++		if (i >= ARRAY_SIZE(selinux_policycap_names))
++			pr_info("SELinux:  unknown policy capability %u\n",
++				i);
++	}
+ }
+ 
+ static int security_preserve_bools(struct policydb *p);
+-- 
+2.40.0
+

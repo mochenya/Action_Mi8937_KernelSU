@@ -1,0 +1,41 @@
+From 58e3ccd8c977373700c48bacf793d2ad4928c487 Mon Sep 17 00:00:00 2001
+From: me-cafebabe <me.cafebabe@gmail.com>
+Date: Mon, 6 Mar 2023 17:49:49 +0800
+Subject: [PATCH 03/26] power: reset: msm-poweroff: Reboot to recovery when
+ kernel panics
+
+Change-Id: Iebfdb0b893614cb8fb3b58307ea6e4f635b97e3d
+---
+ drivers/power/reset/msm-poweroff.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/power/reset/msm-poweroff.c b/drivers/power/reset/msm-poweroff.c
+index 4c9a41c29fbc..e8b03b74d87f 100644
+--- a/drivers/power/reset/msm-poweroff.c
++++ b/drivers/power/reset/msm-poweroff.c
+@@ -311,6 +311,14 @@ static void msm_restart_prepare(const char *cmd)
+ 	else
+ 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+ 
++	if (in_panic) {
++		// Reboot to recovery
++		qpnp_pon_set_restart_reason(
++			PON_RESTART_REASON_RECOVERY);
++		__raw_writel(0x77665502, restart_reason);
++		goto finish_set_restart_reason;
++	}
++
+ 	if (cmd != NULL) {
+ 		if (!strncmp(cmd, "bootloader", 10)) {
+ 			qpnp_pon_set_restart_reason(
+@@ -368,6 +376,7 @@ static void msm_restart_prepare(const char *cmd)
+ 		}
+ 	}
+ 
++finish_set_restart_reason:
+ 	flush_cache_all();
+ 
+ 	/*outer_flush_all is not supported by 64bit kernel*/
+-- 
+2.40.0
+
