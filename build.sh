@@ -37,15 +37,15 @@ msg " • || Work on $WORKDIR ||"
 msg " • || Cloning Toolchain || "
 
 mkdir -p clang gcc gcc32
-aria2c -s16 -x16 -k1M $CLANG_DL -o clang.tar.gz
-aria2c -s16 -x16 -k1M $GCC_DL -o gcc.tar.gz
-aria2c -s16 -x16 -k1M $GCC32_DL -o gcc32.tar.gz
+aria2c $CLANG_DL -o clang.tar.gz
+aria2c $GCC_DL -o gcc.tar.gz
+aria2c $GCC32_DL -o gcc32.tar.gz
 tar -C clang/ -zxvf clang.tar.gz
 tar -C gcc/ -zxvf gcc.tar.gz
 tar -C gcc32/ -zxvf gcc32.tar.gz
 rm -rf *.tar.gz
 
-CLANG_VERSION="$(CLANG_DIR/clang --version | head -n 1)"
+CLANG_VERSION="$($CLANG_DIR/clang --version | head -n 1)"
 msg " • CLANG VERSIONS: $CLANG_VERSION "
 
 # GET KERNEL SOURCE
@@ -56,7 +56,10 @@ cd $KERNEL_DIR
 
 # PATCH KERNELSU
 msg " • || Patching KernelSU || "
-patch -p1 < $WORKDIR/patchs/*.patch
+for patch_file in $WORKDIR/patchs/*.patch
+do
+  patch -p1 < "$patch_file"
+done
 
 curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 KSU_GIT_VERSION=$(cd KernelSU && git rev-list --count HEAD)
@@ -66,17 +69,14 @@ msg " • KernelSU version: $KERNELSU_VERSION || "
 # BUILD KERNEL
 msg " • || Started Compilation || "
 
-args="PATH=$CLANG_DIR:$PATH \
-PATH=$GCC_DIR:$PATH \
-PATH=$GCC32_DIR:$PATH \
-ARCH=arm64 \
+args="ARCH=arm64 \
 SUBARCH=arm64 \
 CLANG_TRIPLE=aarch64-linux-gnu- \
-CROSS_COMPILE=aarch64-linux-gnu- \
-CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-CC=clang \
-HOSTCC=clang \
-HOSTCXX=clang++"
+CROSS_COMPILE=$GCC_DIR/aarch64-linux-gnu- \
+CROSS_COMPILE_ARM32=$GCC32_DIR/arm-linux-gnueabi- \
+CC=$CLANG_DIR/clang \
+HOSTCC=$CLANG_DIR/clang \
+HOSTCXX=$CLANG_DIR/clang++"
 
 # LINUX KERNEL VERSION
 rm -rf out
