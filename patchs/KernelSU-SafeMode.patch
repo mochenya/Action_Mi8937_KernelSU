@@ -1,5 +1,18 @@
+diff --git a/arch/arm64/configs/lineageos_mi8937_defconfig b/arch/arm64/configs/lineageos_mi8937_defconfig
+index c496db047..9906a17c3 100644
+--- a/arch/arm64/configs/lineageos_mi8937_defconfig
++++ b/arch/arm64/configs/lineageos_mi8937_defconfig
+@@ -43,7 +43,7 @@ CONFIG_BPF_SYSCALL=y
+ CONFIG_EMBEDDED=y
+ # CONFIG_COMPAT_BRK is not set
+ CONFIG_PROFILING=y
+-CONFIG_CC_STACKPROTECTOR_STRONG=y
++# CONFIG_CC_STACKPROTECTOR_STRONG is not set
+ CONFIG_ARCH_MMAP_RND_COMPAT_BITS=16
+ CONFIG_MODULES=y
+ CONFIG_MODULE_UNLOAD=y
 diff --git a/drivers/input/input.c b/drivers/input/input.c
-index 378717d1b3b4..df0eaa5262f1 100644
+index 378717d1b..df0eaa526 100644
 --- a/drivers/input/input.c
 +++ b/drivers/input/input.c
 @@ -377,10 +377,13 @@ static int input_get_disposition(struct input_dev *dev,

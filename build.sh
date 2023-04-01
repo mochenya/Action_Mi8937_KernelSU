@@ -5,9 +5,9 @@
 
 WORKDIR=$(pwd)
 
-KERENEL_GIT="https://github.com/Mi-Thorium/kernels.git"
-KERNEL_BRANCHE="mi8937/lineage-20-unofficial"
-KERNEL_DIR="$WORKDIR/kernels"
+KERENEL_GIT="https://github.com/LineageOS/android_kernel_xiaomi_msm8937.git"
+KERNEL_BRANCHE="lineage-20"
+KERNEL_DIR="$WORKDIR/android_kernel_xiaomi_msm8937"
 
 DEVICES_CODE="mi8937"
 DEVICE_DEFCONFIG="lineageos_mi8937_defconfig"
@@ -65,6 +65,8 @@ curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh
 KSU_GIT_VERSION=$(cd KernelSU && git rev-list --count HEAD)
 KERNELSU_VERSION=$(($KSU_GIT_VERSION + 10000 + 200))
 msg " • KernelSU version: $KERNELSU_VERSION || "
+
+sed -i "/CONFIG_LOCALVERSION/s/\"$/-ksu-$KERNELSU_VERSION\"/" $DEVICE_DEFCONFIG_FILE
 
 # BUILD KERNEL
 msg " • || Started Compilation || "
