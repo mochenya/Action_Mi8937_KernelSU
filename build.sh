@@ -13,9 +13,12 @@ DEVICES_CODE="mi8937"
 DEVICE_DEFCONFIG="lineageos_mi8937_defconfig"
 DEVICE_DEFCONFIG_FILE="$KERNEL_DIR/arch/arm64/configs/$DEVICE_DEFCONFIG"
 
-CLANG_DL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-13.0.0_r37/clang-r450784d.tar.gz"
-GCC_DL="https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/0a0604336d4d1067aa1aaef8d3779b31fcee841d.tar.gz"
-GCC32_DL="https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/4d16d93f49c2b5ecdd0f12c38d194835dd595603.tar.gz"
+CLANH_GIT="https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git"
+CLANG_BRANCH="lineage-20.0"
+GCC_GIT="https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git"
+GCC_BRANCH="lineage-19.1"
+GCC32_GIT="https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git"
+GCC32_BRANCH="lineage-19.1"
 
 CLANG_DIR="$WORKDIR/clang/bin"
 GCC_DIR="$WORKDIR/gcc/bin"
@@ -36,14 +39,9 @@ cd $WORKDIR
 msg " • || Work on $WORKDIR ||"
 msg " • || Cloning Toolchain || "
 
-mkdir -p clang gcc gcc32
-aria2c $CLANG_DL -o clang.tar.gz
-aria2c $GCC_DL -o gcc.tar.gz
-aria2c $GCC32_DL -o gcc32.tar.gz
-tar -C clang/ -zxvf clang.tar.gz
-tar -C gcc/ -zxvf gcc.tar.gz
-tar -C gcc32/ -zxvf gcc32.tar.gz
-rm -rf *.tar.gz
+git clone --depth=1 $CLANH_GIT -b $CLANG_BRANCH ./clang
+git clone --depth=1 $GCC_GIT -b $GCC_BRANCH ./gcc
+git clone --depth=1 $GCC32_GIT -b $GCC32_BRANCH ./gcc32
 
 CLANG_VERSION="$($CLANG_DIR/clang --version | head -n 1)"
 msg " • CLANG VERSIONS: $CLANG_VERSION "
